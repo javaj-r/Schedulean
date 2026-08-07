@@ -24,7 +24,7 @@ public class JobRun {
     public static final String OCCURRED_AT_CANNOT_BE_NULL = "occurredAt cannot be null";
     private final JobRunId id;
     private final JobId jobId;
-    private final String instanceId;
+    private final NodeInstanceId instanceId;
     private RunStatus status;
     private final Instant scheduledAt;
     private Instant startedAt;
@@ -34,7 +34,7 @@ public class JobRun {
     private String errorType;
     private String errorMessage;
     private String resultPayload;
-    private String executingNodeId;
+    private NodeInstanceId executingNodeId;
     private Instant lastHeartbeat;
     private final TraceContext traceContext;
     private final ChainId chainId;
@@ -45,7 +45,7 @@ public class JobRun {
 
     public JobRun(JobRunId id,
                   JobId jobId,
-                  String instanceId,
+                  NodeInstanceId instanceId,
                   Instant scheduledAt,
                   TraceContext traceContext,
                   ChainId chainId,
@@ -55,13 +55,13 @@ public class JobRun {
         this.jobId = Objects.requireNonNull(jobId, "jobId cannot be null");
         this.instanceId = Objects.requireNonNull(instanceId, "instanceId cannot be null");
         this.scheduledAt = Objects.requireNonNull(scheduledAt, "scheduledAt cannot be null");
-        this.traceContext = Objects.requireNonNullElse(traceContext, TraceContext.empty());
+        this.traceContext = Objects.requireNonNull(traceContext, "traceContext cannot be null. Use TraceContext.empty()");
         this.chainId = chainId; // Nullable
         this.batchId = batchId; // Nullable
         this.status = RunStatus.PENDING; // State machine starts at PENDING
     }
 
-    public void markStarted(String nodeId, Instant occurredAt) {
+    public void markStarted(NodeInstanceId nodeId, Instant occurredAt) {
         Objects.requireNonNull(nodeId, "nodeId cannot be null");
         Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
         if (this.status != RunStatus.PENDING) {
@@ -172,7 +172,7 @@ public class JobRun {
     public void reclaim(String reason, Instant occurredAt) {
         Objects.requireNonNull(reason, "reason cannot be null");
         Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
-        if (reason.isBlank()) throw new IllegalArgumentException("reason cannot be blank");
+        if (reason.isBlank()) throw new JobExecutionException("reason cannot be blank");
 
         if (this.status != RunStatus.RUNNING && this.status != RunStatus.PENDING) {
             throw new JobExecutionException("Cannot reclaim a run that is already terminal. Current state: " + status);
@@ -217,7 +217,7 @@ public class JobRun {
         return jobId;
     }
 
-    public String instanceId() {
+    public NodeInstanceId instanceId() {
         return instanceId;
     }
 
@@ -257,7 +257,7 @@ public class JobRun {
         return resultPayload;
     }
 
-    public String executingNodeId() {
+    public NodeInstanceId executingNodeId() {
         return executingNodeId;
     }
 
