@@ -85,30 +85,52 @@ public class JobDefinition {
      * Explicitly sets the next due time.
      * Fails if the job is currently paused.
      */
-    public void scheduleNextRun(Instant nextRunAt) {
+    public void scheduleNextRun(Instant nextRunAt, Instant occurredAt) {
+        Objects.requireNonNull(nextRunAt, "nextRunAt cannot be null");
+        Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
+        if (nextRunAt.isBefore(occurredAt)) {
+            throw new JobExecutionException("nextRunAt cannot be before occurredAt " + occurredAt);
+        }
         if (this.state != JobState.ACTIVE) {
             throw new JobExecutionException("Cannot schedule next run for a paused job: " + id.value());
         }
-        Objects.requireNonNull(nextRunAt, "nextRunAt cannot be null");
         this.nextRunAt = nextRunAt;
+        this.events.add(new JobNextRunScheduled(id, nextRunAt, occurredAt)); // New Event
     }
 
-    public void clearNextRun() {
+    public void clearNextRun(Instant occurredAt) {
+        Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
+        if (this.nextRunAt == null) {
+            throw new InvalidJobDefinitionException("Cannot clear next run: no run is currently scheduled.");
+        }
         this.nextRunAt = null;
+        this.events.add(new JobNextRunCleared(id, occurredAt));
     }
 
-    public void enableResultStorage() {
+    public void enableResultStorage(Instant occurredAt) {
+        Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
+        if (this.storeResult) {
+            throw new InvalidJobDefinitionException("Cannot enable result storage: it is already enabled.");
+        }
         this.storeResult = true;
+        this.events.add(new JobResultStorageEnabled(id, occurredAt));
     }
 
     /**
      * Assigns this job to a specific step in a chain.
      */
-    public void assignToChain(ChainId chainId, int sequence) {
+    public void assignToChain(ChainId chainId, int sequence, Instant occurredAt) {
         Objects.requireNonNull(chainId, "chainId cannot be null");
+        Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
         if (sequence < 1) throw new InvalidJobDefinitionException("Chain sequence must be >= 1");
+
+        if (this.chainId != null) {
+            throw new InvalidJobDefinitionException("Cannot assign to chain: job is already assigned to chain " + this.chainId.value());
+        }
+
         this.chainId = chainId;
         this.chainSequence = sequence;
+        this.events.add(new JobAssignedToChain(id, chainId, sequence, occurredAt));
     }
 
     public List<DomainEvent> pullEvents() {
