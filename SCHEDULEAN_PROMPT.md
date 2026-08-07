@@ -31,9 +31,9 @@ When generating or reviewing code, ensure the following aggregates, value object
 
 ### Domain Layer (`org.javid.schedulean.domain`)
 - **Aggregates:** `JobDefinition`, `JobRun`, `JobAttempt`, `JobChain`, `JobChainStep`, `JobBatch`.
-- **Records/Models:** `JobInvocation`, `JobFailureEvent`, `RunContext`, `NotificationChannel` (enum).
-- **Value Objects:** `JobId`, `JobRunId`, `JobBatchId`, `ChainId`, `LockName`, `CronExpression`, `Interval`, `ScheduleConfig`, `RetrySpec`, `RetryMode`, `LockConfig`, `HeartbeatConfig`, `Priority`, `ServerTags`, `Timeout`, `ConcurrencyLimit`, `ExternalRef`, `TraceContext`, `JobHandlerKey`.
-- **Enums:** `JobStatus`, `RunStatus`, `AttemptStatus`, `ChainStatus`, `BatchStatus`, `ChainStepTriggerMode`, `StepOutcome`.
+- **Records/Models:** `JobInvocation`, `JobFailureEvent`, `RunContext`.
+- **Value Objects (`valueobject`):** `JobId`, `JobRunId`, `JobBatchId`, `ChainId`, `LockName`, `CronExpression`, `Interval`, `ScheduleConfig`, `RetrySpec`, `RetryMode`, `LockConfig`, `HeartbeatConfig`, `Priority`, `ServerTags`, `Timeout`, `ConcurrencyLimit`, `ExternalRef`, `TraceContext`, `JobHandlerKey`.
+- **Enums (`valueobject.enums`):** `JobStatus`, `RunStatus`, `AttemptStatus`, `ChainStatus`, `BatchStatus`, `ChainStepTriggerMode`, `StepOutcome`, `NotificationChannel`.
 - **Events:** `DomainEvent` (interface), `JobScheduled`, `JobDefinitionChanged`, `JobRunStarted`, `JobAttemptSucceeded`, `JobAttemptFailed`, `JobRunSucceeded`, `JobRunFailed`, `JobTimedOut`, `JobReclaimed`, `LockReleased`, `ChainAdvanced`, `BatchUpdated`, `BatchCompleted`, `BatchFailed`, `JobPaused`, `JobResumed`, `ChainCompleted`, `ChainFailed`.
 - **Services:** `RetryPolicy`, `NotificationRuleEngine`.
 - **Exceptions:** `JobExecutionException`, `JobTimeoutException`, `LockAcquisitionException`, `DatabaseUnavailableException`, `InvalidJobDefinitionException`, `ChainExecutionException`, `BatchExecutionException`.
@@ -79,6 +79,9 @@ When writing or reviewing Domain Aggregates, Value Objects, and Events, the foll
 - **Infrastructure Abstraction:** Complex calculations (e.g., Cron expression parsing) MUST NOT reside in the domain layer. They must be abstracted behind an application port (e.g., `CronNextRunProvider`) and implemented in the adapter layer.
 - **Domain Exceptions:** Use specific domain exceptions (e.g., `InvalidJobDefinitionException`, `ChainExecutionException`) instead of generic Java exceptions (`IllegalArgumentException`, `IllegalStateException`) for invariant violations and state transition failures. All defined domain exceptions MUST be actively thrown by the aggregate, application service, or adapter layer where semantically appropriate.
 - **Constructor Parameter Limits:** Aggregate constructors MUST NOT become bloated with too many parameters (maximum 5-6). If an aggregate requires numerous configuration values, they MUST be grouped into cohesive Value Objects (e.g., grouping schedule, retry, and lock configs into a `JobExecutionConfig`).
+- **Package Organization:** Complex, multi-field Value Objects (records) MUST reside in the `domain.valueobject` package. Simple behavioral Enums MUST reside in the `domain.valueobject.enums` package to prevent package clutter and improve navigability.
+- **Shared Domain Enums:** Enums used across multiple aggregates, events, or adapters (e.g., `RunStatus`, `ChainStepTriggerMode`, `NotificationChannel`) MUST reside in the `domain.valueobject.enums` package.
+- **Context-Bound Enums:** Enums that only make sense within the context of a specific aggregate or record (e.g., `JobFailureEvent.Severity`, `JobChain.StepOutcome`) MUST remain nested inside their parent class to ensure encapsulation and prevent domain namespace
 
 ## 6. AI Output Verification Checklist (Run this before finishing your response)
 1. **Purity Check:** Did I put any Spring/JPA annotations (`@Entity`, `@Component`, `@Service`) in the `domain` package? (If yes, FIX).
@@ -96,7 +99,9 @@ When writing or reviewing Domain Aggregates, Value Objects, and Events, the foll
 13. **Defaults Rejection Check:** Did I ensure state transition methods require explicit non-null inputs and do not silently apply defaults?
 14. **Event Generation & Validation Check:** Did I ensure aggregates actually record their respective domain events during state transitions, and that the event records validate their own fields (non-null, non-blank, ranges) in their compact constructors?
 15. **Dead Code Check:** Did I ensure that all defined Domain Events have a corresponding aggregate method that records them, and all Domain Exceptions are actively thrown by the domain, application, or adapter layers?
-16. 
+16. **Constructor Parameter Check:** Did I ensure aggregate constructors do not have excessive parameters (max 5-6) by grouping related configurations into dedicated Value Objects?
+17. **Package Organization Check:** Did I place complex Value Objects in `domain.valueobject` and simple Enums in `domain.valueobject.enums`?
+18. **Enum Placement Check:** Did I place shared domain enums in `domain.valueobject.enums`, while keeping context-bound enums (like `Severity` or `StepOutcome`) nested inside their respective parent classes?
 
 If any of the above are false, revise the code before presenting it.
 ```
