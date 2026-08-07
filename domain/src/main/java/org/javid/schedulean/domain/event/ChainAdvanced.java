@@ -9,5 +9,6 @@ public record ChainAdvanced(ChainId chainId, int newStep, Instant occurredAt) im
     public ChainAdvanced {
         Objects.requireNonNull(chainId, "chainId cannot be null");
         Objects.requireNonNull(occurredAt, "occurredAt cannot be null");
+        if (newStep < 1) throw new IllegalArgumentException("newStep must be >= 1");
     }
 }
