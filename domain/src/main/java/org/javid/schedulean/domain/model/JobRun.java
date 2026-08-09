@@ -24,7 +24,7 @@ public class JobRun {
     public static final String OCCURRED_AT_CANNOT_BE_NULL = "occurredAt cannot be null";
     private final JobRunId id;
     private final JobId jobId;
-    private final NodeInstanceId instanceId;
+    private final NodeInstanceId createdByNodeId;
     private RunStatus status;
     private final Instant scheduledAt;
     private Instant startedAt;
@@ -45,7 +45,7 @@ public class JobRun {
 
     public JobRun(JobRunId id,
                   JobId jobId,
-                  NodeInstanceId instanceId,
+                  NodeInstanceId createdByNodeId,
                   Instant scheduledAt,
                   TraceContext traceContext,
                   ChainId chainId,
@@ -53,7 +53,7 @@ public class JobRun {
 
         this.id = Objects.requireNonNull(id, "id cannot be null");
         this.jobId = Objects.requireNonNull(jobId, "jobId cannot be null");
-        this.instanceId = Objects.requireNonNull(instanceId, "instanceId cannot be null");
+        this.createdByNodeId = Objects.requireNonNull(createdByNodeId, "createdByNodeId cannot be null");
         this.scheduledAt = Objects.requireNonNull(scheduledAt, "scheduledAt cannot be null");
         this.traceContext = Objects.requireNonNull(traceContext, "traceContext cannot be null. Use TraceContext.empty()");
         this.chainId = chainId; // Nullable
@@ -217,8 +217,8 @@ public class JobRun {
         return jobId;
     }
 
-    public NodeInstanceId instanceId() {
-        return instanceId;
+    public NodeInstanceId createdByNodeId() {
+        return createdByNodeId;
     }
 
     public RunStatus status() {

@@ -8,6 +8,7 @@ import java.util.Objects;
 
 public class JobAttempt {
 
+    public static final String OCCURRED_AT_CANNOT_BE_NULL = "occurredAt cannot be null";
     private final int number;
     private final Instant startedAt;
     private Instant finishedAt;
@@ -24,7 +25,7 @@ public class JobAttempt {
     }
 
     void succeed(Instant occurredAt) {
-        Objects.requireNonNull(occurredAt, "occurredAt cannot be null");
+        Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
         if (this.status != AttemptStatus.RUNNING) {
             throw new JobExecutionException("Cannot succeed an attempt that is not RUNNING");
         }
@@ -34,7 +35,7 @@ public class JobAttempt {
 
     void fail(Throwable t, Instant occurredAt) {
         Objects.requireNonNull(t, "throwable cannot be null");
-        Objects.requireNonNull(occurredAt, "occurredAt cannot be null");
+        Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
         if (this.status != AttemptStatus.RUNNING) {
             throw new JobExecutionException("Cannot fail an attempt that is not RUNNING");
         }
@@ -45,7 +46,7 @@ public class JobAttempt {
     }
 
     void markLockAcquired(Instant occurredAt) {
-        Objects.requireNonNull(occurredAt, "occurredAt cannot be null");
+        Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
         if (this.status != AttemptStatus.RUNNING) {
             throw new JobExecutionException("Cannot mark lock acquired for an attempt that is not RUNNING");
         }
