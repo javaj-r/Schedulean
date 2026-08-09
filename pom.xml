@@ -22,8 +22,32 @@
     </developers>
 
     <modules>
+        <!-- The <module> tag refers to the directory name -->
+        <!-- The artifactId inside the child pom.xml will have the schedulean- prefix -->
         <module>domain</module>
-        <module>application</module>
+        <module>application-api</module>
+        <module>application-core</module>
+
+        <!-- Inbound Adapters -->
+        <!--
+        <module>adapter-in-rest</module>
+        <module>adapter-in-grpc</module>
+        <module>adapter-in-nats</module>
+        -->
+
+        <!-- Outbound Adapters -->
+        <!--
+        <module>adapter-out-oracle</module>
+        <module>adapter-out-postgres</module>
+        <module>adapter-out-mongodb</module>
+        <module>adapter-out-nats</module>
+        <module>adapter-out-shedlock</module>
+        -->
+
+        <!-- Bootstrap -->
+        <!--
+        <module>bootstrap</module>
+        -->
     </modules>
 
     <scm>
@@ -35,8 +59,31 @@
 
     <properties>
         <java.version>25</java.version>
+        <spring.boot.version>4.1.0</spring.boot.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
+
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Internal Modules -->
+            <dependency>
+                <groupId>org.javid</groupId>
+                <artifactId>schedulean-domain</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.javid</groupId>
+                <artifactId>schedulean-application-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.javid</groupId>
+                <artifactId>schedulean-application-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
 
     <build>
@@ -52,6 +99,7 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring.boot.version}</version>
             </plugin>
         </plugins>
     </build>
