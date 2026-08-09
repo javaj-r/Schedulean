@@ -9,15 +9,14 @@
         <version>0.0.1-SNAPSHOT</version>
     </parent>
 
-    <artifactId>schedulean-application</artifactId>
-
+    <artifactId>schedulean-application-api</artifactId>
     <packaging>jar</packaging>
 
     <dependencies>
         <dependency>
             <groupId>org.javid</groupId>
             <artifactId>schedulean-domain</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
         </dependency>
     </dependencies>
+
 </project>
