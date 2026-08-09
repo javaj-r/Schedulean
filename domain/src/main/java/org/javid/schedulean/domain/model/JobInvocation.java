@@ -11,7 +11,7 @@ public record JobInvocation(JobId jobId,
                             String methodName,
                             Map<String, Object> args,
                             JobRunId runId,
-                            NodeInstanceId instanceId,
+                            NodeInstanceId createdByNodeId,
                             TraceId traceId,
                             SpanId spanId,
                             Instant enqueuedAt) {
@@ -20,7 +20,7 @@ public record JobInvocation(JobId jobId,
         Objects.requireNonNull(jobId, "jobId cannot be null");
         Objects.requireNonNull(jobHandlerKey, "jobHandlerKey cannot be null");
         Objects.requireNonNull(runId, "runId cannot be null");
-        Objects.requireNonNull(instanceId, "instanceId cannot be null");
+        Objects.requireNonNull(createdByNodeId, "createdByNodeId cannot be null");
         Objects.requireNonNull(traceId, "traceId cannot be null");
         Objects.requireNonNull(spanId, "spanId cannot be null");
         Objects.requireNonNull(enqueuedAt, "enqueuedAt cannot be null");
