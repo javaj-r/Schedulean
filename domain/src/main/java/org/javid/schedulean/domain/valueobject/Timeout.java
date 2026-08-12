@@ -6,9 +6,7 @@ import java.util.Objects;
 public record Timeout(Duration value) {
     public Timeout {
         Objects.requireNonNull(value, "Timeout duration cannot be null");
-        if (value.isNegative()) {
-            throw new IllegalArgumentException("Timeout duration cannot be negative");
-        }
+        if (value.isNegative()) throw new IllegalArgumentException("Timeout duration cannot be negative");
     }
 
     public static Timeout of(Duration d) {

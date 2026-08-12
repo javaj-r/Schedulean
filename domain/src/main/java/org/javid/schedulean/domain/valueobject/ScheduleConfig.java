@@ -4,12 +4,10 @@ import java.time.Duration;
 
 public record ScheduleConfig(CronExpression cron, Interval interval) {
     public ScheduleConfig {
-        if (cron == null && interval == null) {
+        if (cron == null && interval == null)
             throw new IllegalArgumentException("Either cron or interval must be provided");
-        }
-        if (cron != null && interval != null) {
+        if (cron != null && interval != null)
             throw new IllegalArgumentException("Only one of cron or interval can be set, not both");
-        }
     }
 
     public static ScheduleConfig cron(CronExpression c) {
