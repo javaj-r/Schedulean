@@ -1,7 +1,10 @@
 package org.javid.schedulean.domain.valueobject;
 
-public record JobRunId(Long value) {
+import java.util.Objects;
+
+public record JobRunId(String value) {
     public JobRunId {
-        if (value == null || value < 1) throw new IllegalArgumentException("JobRunId must be positive");
+        Objects.requireNonNull(value, "JobRunId cannot be null");
+        if (value.isBlank()) throw new IllegalArgumentException("JobRunId cannot be blank");
     }
 }
