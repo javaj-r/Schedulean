@@ -6,14 +6,15 @@ import java.util.Objects;
  * Groups all execution-related configuration for a JobDefinition.
  * Applies defaults for optional values at creation.
  */
-public record JobExecutionConfig(ScheduleConfig schedule,
-                                 LockConfig lockConfig,
-                                 RetrySpec retrySpec,
-                                 Priority priority,
-                                 ServerTags serverTags,
-                                 Timeout timeout,
-                                 ConcurrencyLimit maxConcurrent) {
-
+public record JobExecutionConfig(
+        ScheduleConfig schedule,
+        LockConfig lockConfig,
+        RetrySpec retrySpec,
+        Priority priority,
+        ServerTags serverTags,
+        Timeout timeout,
+        ConcurrencyLimit maxConcurrent
+) {
     public JobExecutionConfig {
         Objects.requireNonNull(schedule, "schedule cannot be null");
         Objects.requireNonNull(lockConfig, "lockConfig cannot be null");

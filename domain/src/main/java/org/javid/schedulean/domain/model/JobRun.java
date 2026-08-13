@@ -5,6 +5,7 @@ import org.javid.schedulean.domain.exception.JobExecutionException;
 import org.javid.schedulean.domain.exception.JobTimeoutException;
 import org.javid.schedulean.domain.valueobject.*;
 import org.javid.schedulean.domain.valueobject.enums.AttemptStatus;
+import org.javid.schedulean.domain.valueobject.enums.RecoveryReason;
 import org.javid.schedulean.domain.valueobject.enums.RunStatus;
 
 import java.time.Instant;
@@ -13,15 +14,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * NOTE ON EVENTS: To keep the aggregate focused purely on state transitions,
- * JobRun and JobAttempt domain events (e.g., JobRunStarted, JobAttemptFailed)
- * are emitted exclusively by the application service (ExecuteJobService)
- * which wraps these state transitions.
- */
 public class JobRun {
 
     public static final String OCCURRED_AT_CANNOT_BE_NULL = "occurredAt cannot be null";
+    public static final String ATTEMPT_CANNOT_BE_NULL = "attempt cannot be null";
     private final JobRunId id;
     private final JobId jobId;
     private final NodeInstanceId createdByNodeId;
@@ -43,13 +39,18 @@ public class JobRun {
     private final List<JobAttempt> attempts = new ArrayList<>();
     private final List<DomainEvent> events = new ArrayList<>();
 
-    public JobRun(JobRunId id,
-                  JobId jobId,
-                  NodeInstanceId createdByNodeId,
-                  Instant scheduledAt,
-                  TraceContext traceContext,
-                  ChainId chainId,
-                  JobBatchId batchId) {
+    /**
+     * Primary package-private constructor for NEW runs.
+     * Enforces strict null rejection and sets the default PENDING state.
+     */
+    JobRun(
+            JobRunId id,
+            JobId jobId,
+            NodeInstanceId createdByNodeId,
+            Instant scheduledAt,
+            TraceContext traceContext,
+            ChainId chainId,
+            JobBatchId batchId) {
 
         this.id = Objects.requireNonNull(id, "id cannot be null");
         this.jobId = Objects.requireNonNull(jobId, "jobId cannot be null");
@@ -59,6 +60,40 @@ public class JobRun {
         this.chainId = chainId; // Nullable
         this.batchId = batchId; // Nullable
         this.status = RunStatus.PENDING; // State machine starts at PENDING
+    }
+
+    /**
+     * Package-private constructor for RECONSTITUTING runs from persistence.
+     */
+    JobRun(JobRunSnapshot snapshot) {
+        Objects.requireNonNull(snapshot, "snapshot cannot be null");
+
+        this(
+                snapshot.id(),
+                snapshot.jobId(),
+                snapshot.createdByNodeId(),
+                snapshot.scheduledAt(),
+                snapshot.traceContext(),
+                snapshot.chainId(),
+                snapshot.batchId()
+        );
+
+        // Enforce business rules for reconstituted fields
+        this.status = Objects.requireNonNull(snapshot.status(), "status cannot be null");
+
+        // Override default PENDING state with historical state
+        this.startedAt = snapshot.startedAt();
+        this.finishedAt = snapshot.finishedAt();
+        this.durationMs = snapshot.durationMs();
+        this.attemptCount = snapshot.attemptCount();
+        this.errorType = snapshot.errorType();
+        this.errorMessage = snapshot.errorMessage();
+        this.resultPayload = snapshot.resultPayload();
+        this.executingNodeId = snapshot.executingNodeId();
+        this.lastHeartbeat = snapshot.lastHeartbeat();
+
+        // snapshot.attempts() is already defensively copied in JobRunSnapshot
+        this.attempts.addAll(snapshot.attempts());
     }
 
     public void markStarted(NodeInstanceId nodeId, Instant occurredAt) {
@@ -95,33 +130,57 @@ public class JobRun {
         return a;
     }
 
-    public void markAttemptSucceeded(JobAttempt a, Instant occurredAt) {
-        Objects.requireNonNull(a, "attempt cannot be null");
+    public void markAttemptSucceeded(JobAttempt attempt, Instant occurredAt) {
+        Objects.requireNonNull(attempt, ATTEMPT_CANNOT_BE_NULL);
         Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
         if (this.status != RunStatus.RUNNING) {
             throw new JobExecutionException("Cannot mark attempt succeeded when run is not RUNNING");
         }
-        if (!attempts.contains(a) || a.status() != AttemptStatus.RUNNING) {
+        if (!attempts.contains(attempt) || attempt.status() != AttemptStatus.RUNNING) {
             throw new JobExecutionException("Invalid attempt provided for success");
         }
-        a.succeed(occurredAt);
+        attempt.succeed(occurredAt);
 
-        events.add(new JobAttemptSucceeded(jobId, id, a.number(), occurredAt));
+        events.add(new JobAttemptSucceeded(jobId, id, attempt.number(), occurredAt));
     }
 
-    public void markAttemptFailed(JobAttempt a, Throwable t, Instant occurredAt) {
-        Objects.requireNonNull(a, "attempt cannot be null");
+    public void markAttemptFailed(JobAttempt attempt, Throwable t, Instant occurredAt) {
+        Objects.requireNonNull(attempt, ATTEMPT_CANNOT_BE_NULL);
         Objects.requireNonNull(t, "throwable cannot be null");
         Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
         if (this.status != RunStatus.RUNNING) {
             throw new JobExecutionException("Cannot mark attempt failed when run is not RUNNING");
         }
-        if (!attempts.contains(a) || a.status() != AttemptStatus.RUNNING) {
+        if (!attempts.contains(attempt) || attempt.status() != AttemptStatus.RUNNING) {
             throw new JobExecutionException("Invalid attempt provided for failure");
         }
-        a.fail(t, occurredAt);
+        attempt.fail(t, occurredAt);
 
-        events.add(new JobAttemptFailed(jobId, id, a.number(), t.getClass().getName(), occurredAt));
+        events.add(new JobAttemptFailed(jobId, id, attempt.number(), t.getClass().getName(), occurredAt));
+    }
+
+    public void markAttemptTimedOut(JobAttempt attempt, Instant occurredAt) {
+        Objects.requireNonNull(attempt, ATTEMPT_CANNOT_BE_NULL);
+        Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
+        if (this.status != RunStatus.RUNNING) {
+            throw new JobExecutionException("Cannot mark attempt timed out when run is not RUNNING");
+        }
+        if (!attempts.contains(attempt) || attempt.status() != AttemptStatus.RUNNING) {
+            throw new JobExecutionException("Invalid attempt provided for timeout");
+        }
+        attempt.timeout(occurredAt);
+    }
+
+    public void markAttemptLockAcquired(JobAttempt attempt, Instant occurredAt) {
+        Objects.requireNonNull(attempt, ATTEMPT_CANNOT_BE_NULL);
+        Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
+        if (this.status != RunStatus.RUNNING) {
+            throw new JobExecutionException("Cannot mark lock acquired when run is not RUNNING");
+        }
+        if (!attempts.contains(attempt) || attempt.status() != AttemptStatus.RUNNING) {
+            throw new JobExecutionException("Invalid attempt provided for lock acquisition");
+        }
+        attempt.markLockAcquired(occurredAt);
     }
 
     public void succeed(String resultPayload, Instant occurredAt) {
@@ -137,19 +196,19 @@ public class JobRun {
         events.add(new JobRunSucceeded(jobId, id, occurredAt));
     }
 
-    public void fail(Throwable t, Instant occurredAt) {
-        Objects.requireNonNull(t, "throwable cannot be null");
+    public void fail(Throwable throwable, Instant occurredAt) {
+        Objects.requireNonNull(throwable, "throwable cannot be null");
         Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
         if (this.status != RunStatus.RUNNING) {
             throw new JobExecutionException("Cannot fail a run that is not RUNNING. Current state: " + status);
         }
         this.status = RunStatus.FAILED;
         this.finishedAt = occurredAt;
-        this.errorType = t.getClass().getName();
-        this.errorMessage = truncate(t.getMessage(), 4000);
+        this.errorType = throwable.getClass().getName();
+        this.errorMessage = truncate(throwable.getMessage(), 4000);
         this.durationMs = finishedAt.toEpochMilli() - startedAt.toEpochMilli();
 
-        events.add(new JobRunFailed(jobId, id, t.getClass().getName(), occurredAt));
+        events.add(new JobRunFailed(jobId, id, throwable.getClass().getName(), occurredAt));
     }
 
     public void timeout(Instant occurredAt) {
@@ -166,24 +225,37 @@ public class JobRun {
         events.add(new JobTimedOut(jobId, id, occurredAt));
     }
 
+    public void beginRecovery(NodeInstanceId recoveringNodeId, Instant occurredAt) {
+        Objects.requireNonNull(recoveringNodeId, "recoveringNodeId cannot be null");
+        Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
+
+        if (this.status != RunStatus.PENDING && this.status != RunStatus.RUNNING) {
+            throw new JobExecutionException("Cannot begin recovery on a run that is not PENDING or RUNNING. Current state: " + status);
+        }
+        this.status = RunStatus.RECOVERING;
+        this.executingNodeId = recoveringNodeId; // Transfer ownership to recovering node
+        this.lastHeartbeat = occurredAt; // Reset lease timer for the recovery process
+
+        events.add(new JobRecoveryStarted(jobId, id, recoveringNodeId, occurredAt));
+    }
+
     /**
-     * Reclaims a run that was orphaned or zombie.
+     * Strict transition limit. Reclaim only allowed from durable RECOVERING state
      */
-    public void reclaim(String reason, Instant occurredAt) {
+    public void reclaim(RecoveryReason reason, Instant occurredAt) {
         Objects.requireNonNull(reason, "reason cannot be null");
         Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
-        if (reason.isBlank()) throw new JobExecutionException("reason cannot be blank");
 
-        if (this.status != RunStatus.RUNNING && this.status != RunStatus.PENDING) {
-            throw new JobExecutionException("Cannot reclaim a run that is already terminal. Current state: " + status);
+        if (this.status != RunStatus.RECOVERING) {
+            throw new JobExecutionException("Cannot reclaim a run that is not RECOVERING. Current state: " + status);
         }
         this.status = RunStatus.FAILED;
         this.finishedAt = occurredAt;
         this.errorType = "JobReclaimed";
-        this.errorMessage = reason;
+        this.errorMessage = reason.name();
         this.durationMs = startedAt != null ? finishedAt.toEpochMilli() - startedAt.toEpochMilli() : 0L;
 
-        events.add(new JobReclaimed(jobId, id, reason, occurredAt));
+        events.add(new JobReclaimed(jobId, id, reason.name(), occurredAt));
     }
 
     /**

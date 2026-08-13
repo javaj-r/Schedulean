@@ -6,6 +6,7 @@ import org.javid.schedulean.domain.event.ChainFailed;
 import org.javid.schedulean.domain.event.DomainEvent;
 import org.javid.schedulean.domain.exception.ChainExecutionException;
 import org.javid.schedulean.domain.valueobject.ChainId;
+import org.javid.schedulean.domain.valueobject.JobChainSnapshot;
 import org.javid.schedulean.domain.valueobject.enums.ChainStatus;
 
 import java.time.Instant;
@@ -27,10 +28,13 @@ public class JobChain {
 
     private final List<DomainEvent> events = new ArrayList<>();
 
-    public JobChain(ChainId id, String name, List<JobChainStep> steps, Instant occurredAt) {
+    /**
+     * Primary package-private constructor for NEW chains.
+     */
+    JobChain(ChainId id, String name, List<JobChainStep> steps, Instant occurredAt) {
         this.id = Objects.requireNonNull(id, "id cannot be null");
-        this.name = requireNonBlank(name, "name cannot be blank");
-
+        this.name = Objects.requireNonNull(name, "name cannot be null");
+        if (name.isBlank()) throw new ChainExecutionException("name cannot be blank");
         Objects.requireNonNull(steps, "steps cannot be null");
         Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
 
@@ -38,7 +42,7 @@ public class JobChain {
             throw new ChainExecutionException("A JobChain must contain at least one step");
         }
 
-        // Validate sequence is strictly 1..n in order
+        // Validate sequence is strictly 1...n in order
         for (int i = 0; i < steps.size(); i++) {
             if (steps.get(i).sequence() != i + 1) {
                 throw new ChainExecutionException("Steps must be sequentially ordered starting from 1");
@@ -46,9 +50,24 @@ public class JobChain {
         }
 
         this.steps = new ArrayList<>(steps);
-        this.status = ChainStatus.RUNNING;
-        this.currentStep = 1;
         this.createdAt = occurredAt;
+        this.currentStep = 1;
+        this.status = ChainStatus.RUNNING;
+    }
+
+    /**
+     * Package-private constructor for RECONSTITUTING chains from persistence.
+     */
+    JobChain(JobChainSnapshot snapshot) {
+        this.id = snapshot.id();
+        this.name = snapshot.name();
+        this.createdAt = snapshot.createdAt();
+        this.steps = new ArrayList<>(snapshot.steps()); // snapshot already returns unmodifiable copy
+
+        // Override default state with historical state
+        this.status = snapshot.status();
+        this.currentStep = snapshot.currentStep();
+        this.completedAt = snapshot.completedAt();
     }
 
     public enum StepOutcome {SUCCESS, FAILURE, TIMED_OUT, CANCELLED, SKIPPED}
@@ -79,9 +98,25 @@ public class JobChain {
             return;
         }
 
-        // Evaluate if we can advance to the next step based on the next step's trigger mode
+        boolean canAdvance = canAdvance(outcome);
+
+        if (canAdvance) {
+            currentStep++;
+            events.add(new ChainAdvanced(id, currentStep, occurredAt));
+        } else {
+            fail(occurredAt);
+        }
+    }
+
+    /**
+     * Evaluate if we can advance to the next step based on the next step's trigger mode
+     *
+     * @param outcome StepOutcome
+     * @return boolean
+     */
+    private boolean canAdvance(StepOutcome outcome) {
         JobChainStep nextStep = steps.get(currentStep); // 0-based index, so currentStep points to the next step
-        boolean canAdvance = switch (nextStep.triggerMode()) {
+        return switch (nextStep.triggerMode()) {
             case ON_PREVIOUS_SUCCESS -> outcome == StepOutcome.SUCCESS;
             // ON_PREVIOUS_COMPLETION advances if the step didn't fail/timed out/cancelled (e.g., SUCCESS or SKIPPED)
             case ON_PREVIOUS_NON_FAILURE -> outcome == StepOutcome.SUCCESS || outcome == StepOutcome.SKIPPED;
@@ -91,13 +126,6 @@ public class JobChain {
             case START ->
                     throw new ChainExecutionException("Structural violation: START trigger mode on non-first step");
         };
-
-        if (canAdvance) {
-            currentStep++;
-            events.add(new ChainAdvanced(id, currentStep, occurredAt));
-        } else {
-            fail(occurredAt);
-        }
     }
 
     public void fail(Instant occurredAt) {
@@ -127,13 +155,6 @@ public class JobChain {
 
     public JobChainStep currentStepDetails() {
         return steps.get(currentStep - 1);
-    }
-
-    private String requireNonBlank(String value, String message) {
-        if (value == null || value.isBlank()) {
-            throw new ChainExecutionException(message);
-        }
-        return value;
     }
 
     public ChainId id() {

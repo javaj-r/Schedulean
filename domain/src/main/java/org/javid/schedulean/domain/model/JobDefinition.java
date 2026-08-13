@@ -30,11 +30,15 @@ public class JobDefinition {
 
     private final List<DomainEvent> events = new ArrayList<>();
 
-    public JobDefinition(JobId id,
-                         String displayName,
-                         JobHandlerKey jobHandlerKey,
-                         JobExecutionConfig executionConfig,
-                         Instant occurredAt) {
+    /**
+     * Primary package-private constructor for NEW definitions
+     */
+    JobDefinition(
+            JobId id,
+            String displayName,
+            JobHandlerKey jobHandlerKey,
+            JobExecutionConfig executionConfig,
+            Instant occurredAt) {
 
         this.id = Objects.requireNonNull(id, "JobId cannot be null");
         this.displayName = requireNonBlank(displayName, "Display name cannot be blank");
@@ -44,12 +48,25 @@ public class JobDefinition {
         Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
 
         this.state = JobState.ACTIVE;
-        this.storeResult = false;
-        this.chainId = null;
-        this.chainSequence = 0;
-        this.nextRunAt = null;
 
         this.events.add(new JobScheduled(id, occurredAt));
+    }
+
+    /**
+     * Reconstitution constructor
+     */
+    JobDefinition(JobDefinitionSnapshot snapshot) {
+        this.id = snapshot.id();
+        this.displayName = snapshot.displayName();
+        this.jobHandlerKey = snapshot.jobHandlerKey();
+        this.executionConfig = snapshot.executionConfig();
+
+        // Override default state with historical state
+        this.state = snapshot.state();
+        this.storeResult = snapshot.storeResult();
+        this.chainId = snapshot.chainId();
+        this.chainSequence = snapshot.chainSequence();
+        this.nextRunAt = snapshot.nextRunAt();
     }
 
     public void pause(Instant occurredAt) {

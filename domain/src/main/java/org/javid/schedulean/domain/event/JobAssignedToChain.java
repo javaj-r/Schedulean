@@ -6,8 +6,11 @@ import org.javid.schedulean.domain.valueobject.JobId;
 import java.time.Instant;
 import java.util.Objects;
 
-public record JobAssignedToChain(JobId jobId, ChainId chainId, int sequence,
-                                 Instant occurredAt) implements JobDomainEvent {
+public record JobAssignedToChain(
+        JobId jobId,
+        ChainId chainId,
+        int sequence,
+        Instant occurredAt) implements JobDomainEvent {
     public JobAssignedToChain {
         Objects.requireNonNull(jobId, "jobId cannot be null");
         Objects.requireNonNull(chainId, "chainId cannot be null");

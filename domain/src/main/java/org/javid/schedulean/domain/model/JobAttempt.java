@@ -45,6 +45,17 @@ public class JobAttempt {
         this.errorMessage = t.getMessage();
     }
 
+    void timeout(Instant occurredAt) {
+        Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
+        if (this.status != AttemptStatus.RUNNING) {
+            throw new IllegalStateException("Cannot timeout an attempt that is not RUNNING");
+        }
+        this.status = AttemptStatus.FAILED;
+        this.finishedAt = occurredAt;
+        this.errorType = "JobTimeoutException";
+        this.errorMessage = "Attempt exceeded its execution timeout";
+    }
+
     void markLockAcquired(Instant occurredAt) {
         Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
         if (this.status != AttemptStatus.RUNNING) {

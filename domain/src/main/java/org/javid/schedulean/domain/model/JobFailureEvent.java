@@ -7,15 +7,15 @@ import org.javid.schedulean.domain.valueobject.JobRunId;
 import java.time.Instant;
 import java.util.Objects;
 
-public record JobFailureEvent(JobId jobId,
-                              JobRunId runId,
-                              int attemptCount,
-                              String errorType,
-                              String errorMessage,
-                              Severity severity,
-                              Instant occurredAt,
-                              ExternalRef externalRef) {
-
+public record JobFailureEvent(
+        JobId jobId,
+        JobRunId runId,
+        int attemptCount,
+        String errorType,
+        String errorMessage,
+        Severity severity,
+        Instant occurredAt,
+        ExternalRef externalRef) {
     public JobFailureEvent {
         Objects.requireNonNull(jobId, "jobId cannot be null");
         Objects.requireNonNull(runId, "runId cannot be null");
