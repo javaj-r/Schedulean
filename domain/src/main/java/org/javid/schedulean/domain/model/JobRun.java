@@ -39,13 +39,18 @@ public class JobRun {
     private final List<JobAttempt> attempts = new ArrayList<>();
     private final List<DomainEvent> events = new ArrayList<>();
 
-    public JobRun(JobRunId id,
-                  JobId jobId,
-                  NodeInstanceId createdByNodeId,
-                  Instant scheduledAt,
-                  TraceContext traceContext,
-                  ChainId chainId,
-                  JobBatchId batchId) {
+    /**
+     * Primary package-private constructor for NEW runs.
+     * Enforces strict null rejection and sets the default PENDING state.
+     */
+    JobRun(
+            JobRunId id,
+            JobId jobId,
+            NodeInstanceId createdByNodeId,
+            Instant scheduledAt,
+            TraceContext traceContext,
+            ChainId chainId,
+            JobBatchId batchId) {
 
         this.id = Objects.requireNonNull(id, "id cannot be null");
         this.jobId = Objects.requireNonNull(jobId, "jobId cannot be null");
@@ -55,6 +60,40 @@ public class JobRun {
         this.chainId = chainId; // Nullable
         this.batchId = batchId; // Nullable
         this.status = RunStatus.PENDING; // State machine starts at PENDING
+    }
+
+    /**
+     * Package-private constructor for RECONSTITUTING runs from persistence.
+     */
+    JobRun(JobRunSnapshot snapshot) {
+        Objects.requireNonNull(snapshot, "snapshot cannot be null");
+
+        this(
+                snapshot.id(),
+                snapshot.jobId(),
+                snapshot.createdByNodeId(),
+                snapshot.scheduledAt(),
+                snapshot.traceContext(),
+                snapshot.chainId(),
+                snapshot.batchId()
+        );
+
+        // Enforce business rules for reconstituted fields
+        this.status = Objects.requireNonNull(snapshot.status(), "status cannot be null");
+
+        // Override default PENDING state with historical state
+        this.startedAt = snapshot.startedAt();
+        this.finishedAt = snapshot.finishedAt();
+        this.durationMs = snapshot.durationMs();
+        this.attemptCount = snapshot.attemptCount();
+        this.errorType = snapshot.errorType();
+        this.errorMessage = snapshot.errorMessage();
+        this.resultPayload = snapshot.resultPayload();
+        this.executingNodeId = snapshot.executingNodeId();
+        this.lastHeartbeat = snapshot.lastHeartbeat();
+
+        // snapshot.attempts() is already defensively copied in JobRunSnapshot
+        this.attempts.addAll(snapshot.attempts());
     }
 
     public void markStarted(NodeInstanceId nodeId, Instant occurredAt) {
@@ -201,7 +240,7 @@ public class JobRun {
     }
 
     /**
-     * Reclaims a run that was orphaned or zombie.
+     * Strict transition limit. Reclaim only allowed from durable RECOVERING state
      */
     public void reclaim(RecoveryReason reason, Instant occurredAt) {
         Objects.requireNonNull(reason, "reason cannot be null");

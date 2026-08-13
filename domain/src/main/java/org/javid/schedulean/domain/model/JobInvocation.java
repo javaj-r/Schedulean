@@ -6,16 +6,16 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 
-public record JobInvocation(JobId jobId,
-                            JobHandlerKey jobHandlerKey,
-                            String methodName,
-                            Map<String, Object> args,
-                            JobRunId runId,
-                            NodeInstanceId createdByNodeId,
-                            TraceId traceId,
-                            SpanId spanId,
-                            Instant enqueuedAt) {
-
+public record JobInvocation(
+        JobId jobId,
+        JobHandlerKey jobHandlerKey,
+        String methodName,
+        Map<String, Object> args,
+        JobRunId runId,
+        NodeInstanceId createdByNodeId,
+        TraceId traceId,
+        SpanId spanId,
+        Instant enqueuedAt) {
     public JobInvocation {
         Objects.requireNonNull(jobId, "jobId cannot be null");
         Objects.requireNonNull(jobHandlerKey, "jobHandlerKey cannot be null");

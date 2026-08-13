@@ -6,6 +6,7 @@ import org.javid.schedulean.domain.event.BatchUpdated;
 import org.javid.schedulean.domain.event.DomainEvent;
 import org.javid.schedulean.domain.exception.BatchExecutionException;
 import org.javid.schedulean.domain.valueobject.JobBatchId;
+import org.javid.schedulean.domain.valueobject.JobBatchSnapshot;
 import org.javid.schedulean.domain.valueobject.enums.BatchStatus;
 
 import java.time.Instant;
@@ -26,13 +27,33 @@ public class JobBatch {
 
     private final List<DomainEvent> events = new ArrayList<>();
 
-    public JobBatch(JobBatchId id, String name, int totalJobs, Instant occurredAt) {
+    /**
+     * Primary package-private constructor for NEW batches.
+     */
+    JobBatch(JobBatchId id, String name, int totalJobs, Instant occurredAt) {
         this.id = Objects.requireNonNull(id, "id cannot be null");
-        this.name = requireNonBlank(name, "name cannot be blank");
+        this.name = Objects.requireNonNull(name, "name cannot be null");
+        if (name.isBlank()) throw new BatchExecutionException("name cannot be blank");
         if (totalJobs < 1) throw new BatchExecutionException("totalJobs must be >= 1");
         this.totalJobs = totalJobs;
-        this.status = BatchStatus.RUNNING;
         this.createdAt = Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
+        this.status = BatchStatus.RUNNING;
+    }
+
+    /**
+     * Package-private constructor for RECONSTITUTING batches from persistence.
+     */
+    JobBatch(JobBatchSnapshot snapshot) {
+        this.id = snapshot.id();
+        this.name = snapshot.name();
+        this.totalJobs = snapshot.totalJobs();
+        this.createdAt = snapshot.createdAt();
+
+        // Override default state with historical state
+        this.status = snapshot.status();
+        this.succeeded = snapshot.succeeded();
+        this.failed = snapshot.failed();
+        this.completedAt = snapshot.completedAt();
     }
 
     public void recordSuccess(Instant occurredAt) {
@@ -73,11 +94,6 @@ public class JobBatch {
         var copy = List.copyOf(events);
         events.clear();
         return copy;
-    }
-
-    private String requireNonBlank(String value, String message) {
-        if (value == null || value.isBlank()) throw new BatchExecutionException(message);
-        return value;
     }
 
     public JobBatchId id() {
