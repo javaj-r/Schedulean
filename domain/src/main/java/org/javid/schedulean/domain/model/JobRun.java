@@ -186,6 +186,20 @@ public class JobRun {
         events.add(new JobTimedOut(jobId, id, occurredAt));
     }
 
+    public void beginRecovery(NodeInstanceId recoveringNodeId, Instant occurredAt) {
+        Objects.requireNonNull(recoveringNodeId, "recoveringNodeId cannot be null");
+        Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
+
+        if (this.status != RunStatus.PENDING && this.status != RunStatus.RUNNING) {
+            throw new JobExecutionException("Cannot begin recovery on a run that is not PENDING or RUNNING. Current state: " + status);
+        }
+        this.status = RunStatus.RECOVERING;
+        this.executingNodeId = recoveringNodeId; // Transfer ownership to recovering node
+        this.lastHeartbeat = occurredAt; // Reset lease timer for the recovery process
+
+        events.add(new JobRecoveryStarted(jobId, id, recoveringNodeId, occurredAt));
+    }
+
     /**
      * Reclaims a run that was orphaned or zombie.
      */
@@ -193,8 +207,8 @@ public class JobRun {
         Objects.requireNonNull(reason, "reason cannot be null");
         Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
 
-        if (this.status != RunStatus.PENDING && this.status != RunStatus.RUNNING && this.status != RunStatus.RECOVERING) {
-            throw new JobExecutionException("Cannot reclaim a run that is already terminal. Current state: " + status);
+        if (this.status != RunStatus.RECOVERING) {
+            throw new JobExecutionException("Cannot reclaim a run that is not RECOVERING. Current state: " + status);
         }
         this.status = RunStatus.FAILED;
         this.finishedAt = occurredAt;
