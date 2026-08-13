@@ -44,10 +44,11 @@ When generating or reviewing code, ensure the following aggregates, value object
 
 ### Domain Layer (`org.javid.schedulean.domain`)
 - **Aggregates:** `JobDefinition`, `JobRun`, `JobAttempt`, `JobChain`, `JobChainStep`, `JobBatch`.
+- **Aggregate Root Factories:** `JobDefinitionFactory`, `JobRunFactory`, `JobChainFactory`, `JobBatchFactory`.
 - **Records/Models:** `JobInvocation`, `JobFailureEvent`, `RunContext`.
-- **Value Objects (`valueobject`):** `JobId` (String-backed), `JobRunId` (String-backed), `JobBatchId` (String-backed), `ChainId` (String-backed), `LockName`, `CronExpression`, `Interval`, `ScheduleConfig`, `RetrySpec`, `RetryMode`, `LockConfig`, `HeartbeatConfig`, `Priority`, `ServerTags`, `Timeout`, `ConcurrencyLimit`, `ExternalRef`, `TraceContext`, `JobHandlerKey`, `NodeInstanceId`.
+- **Value Objects (`valueobject`):** `JobId` (String-backed), `JobRunId` (String-backed), `JobBatchId` (String-backed), `ChainId` (String-backed), `LockName`, `CronExpression`, `Interval`, `ScheduleConfig`, `RetrySpec`, `RetryMode`, `LockConfig`, `HeartbeatConfig`, `Priority`, `ServerTags`, `Timeout`, `ConcurrencyLimit`, `ExternalRef`, `TraceContext`, `JobHandlerKey`, `NodeInstanceId`, `JobRunSnapshot`, `JobBatchSnapshot`, `JobChainSnapshot`, `JobDefinitionSnapshot`.
 - **Enums (`valueobject.enums`):** `JobState`, `RunStatus`, `AttemptStatus`, `ChainStatus`, `BatchStatus`, `ChainStepTriggerMode`, `StepOutcome`, `NotificationChannel`, `RecoveryReason`.
-- **Events:** `DomainEvent` (interface), `JobDomainEvent` (interface), `JobScheduled`, `JobDefinitionChanged`, `JobRunStarted`, `JobNextRunCleared`, `JobAttemptSucceeded`, `JobAttemptFailed`, `JobRunSucceeded`, `JobRunFailed`, `JobTimedOut`, `JobReclaimed`, `JobResultStorageEnabled`, `JobAssignedToChain`, `LockReleased`, `ChainAdvanced`, `BatchUpdated`, `BatchCompleted`, `BatchFailed`, `JobPaused`, `JobResumed`, `ChainCompleted`, `ChainFailed`.
+- **Events:** `DomainEvent` (interface), `JobDomainEvent` (interface), `JobScheduled`, `JobDefinitionChanged`, `JobRunStarted`, `JobNextRunCleared`, `JobAttemptSucceeded`, `JobAttemptFailed`, `JobRunSucceeded`, `JobRunFailed`, `JobTimedOut`, `JobReclaimed`, `JobRecoveryStarted`, `JobResultStorageEnabled`, `JobAssignedToChain`, `LockReleased`, `ChainAdvanced`, `BatchUpdated`, `BatchCompleted`, `BatchFailed`, `JobPaused`, `JobResumed`, `ChainCompleted`, `ChainFailed`.
 - **Services:** `RetryPolicy`, `NotificationRuleEngine`.
 - **Exceptions:** `JobExecutionException`, `JobTimeoutException`, `LockAcquisitionException`, `DatabaseUnavailableException`, `InvalidJobDefinitionException`, `ChainExecutionException`, `BatchExecutionException`.
 - **Ports:** `JobHandler` (interface for other BCs).
@@ -100,6 +101,9 @@ When writing or reviewing Domain Aggregates, Value Objects, and Events, the foll
 - **Package Organization:** Complex, multi-field Value Objects (records) MUST reside in the `domain.valueobject` package. Simple behavioral Enums MUST reside in the `domain.valueobject.enums` package to prevent package clutter and improve navigability.
 - **Shared Domain Enums:** Enums used across multiple aggregates, events, or adapters (e.g., `RunStatus`, `ChainStepTriggerMode`, `NotificationChannel`) MUST reside in the `domain.valueobject.enums` package.
 - **Context-Bound Enums:** Enums that only make sense within the context of a specific aggregate or record (e.g., `JobFailureEvent.Severity`, `JobChain.StepOutcome`) MUST remain nested inside their parent class to ensure encapsulation and prevent domain namespace pollution.
+- **Aggregate Reconstitution:** Aggregate Roots MUST NOT be reconstituted via static methods or public constructors that bypass default state. They MUST use a dedicated package-private constructor accepting a `[AggregateName]Snapshot` Value Object (e.g., `JobDefinitionSnapshot`).
+- **Aggregate Factories:** Aggregate Roots MUST be instantiated via a dedicated `[AggregateName]Factory` class. The factory provides `createNew[Aggregate]()` and `reconstitute(snapshot)` methods, keeping all aggregate constructors package-private.
+- **Internal Entities:** Internal entities (e.g., `JobAttempt`) do not need standalone factories. They are created by their parent Aggregate Root and reconstituted internally via their own Snapshot objects during the parent's reconstitution.
 
 ## 6. Clean Code & SOLID Principles (STRICT)
 
@@ -141,6 +145,7 @@ When writing or reviewing any Java code, the following clean code and SOLID rule
 22. **Silent Failure Check:** Did I ensure no catch blocks swallow exceptions without logging, metric recording, or intentional rethrowing?
 23. **ID Strategy Check:** Did I ensure all aggregates receive their IDs via the constructor (using a `String`-backed Value Object) and that ID generation is requested via an `IdGenerationPort` rather than hardcoding UUID/UUIDv7 generation in the application core?
 24. **Lombok Boundary Check:** Did I ensure NO Lombok annotations are used in the `domain` or `application-api` modules?
+25. **Aggregate Factory & Snapshot Check:** Did I ensure all Aggregate Roots use a dedicated Factory and a Snapshot Value Object for reconstitution, rather than public constructors or static methods?
 
 If any of the above are false, revise the code before presenting it.
 ```
