@@ -11,10 +11,6 @@ public interface NodeRegistryPort {
 
     void deregister();
 
-    boolean isMaster();
-
-    boolean tryAcquireMastership();
-
     List<NodeInstanceId> deadNodes();
 
     NodeInstanceId nodeId();
