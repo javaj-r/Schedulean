@@ -13,10 +13,14 @@ import java.time.Instant;
  */
 public final class JobDefinitionFactory {
 
+    private JobDefinitionFactory() {
+        /* This utility class should not be instantiated */
+    }
+
     /**
      * Creates a NEW JobDefinition in its initial PENDING state.
      */
-    public JobDefinition createNewDefinition(
+    public static JobDefinition createNewDefinition(
             JobId id,
             String displayName,
             JobHandlerKey jobHandlerKey,
@@ -30,7 +34,7 @@ public final class JobDefinitionFactory {
      * Reconstitutes a JobDefinition from a persisted snapshot.
      * Delegates to the package-private static method inside JobDefinition to ensure encapsulation.
      */
-    public JobDefinition reconstitute(JobDefinitionSnapshot snapshot) {
+    public static JobDefinition reconstitute(JobDefinitionSnapshot snapshot) {
         return new JobDefinition(snapshot);
     }
 }

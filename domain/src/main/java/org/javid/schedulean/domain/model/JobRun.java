@@ -33,7 +33,17 @@ public class JobRun {
     private NodeInstanceId executingNodeId;
     private Instant lastHeartbeat;
     private final TraceContext traceContext;
+
+    /**
+     * The ID of the chain this run belongs to, if any.
+     * Null means this run is not part of a chain.
+     */
     private final ChainId chainId;
+
+    /**
+     * The ID of the batch this run belongs to, if any.
+     * Null means this run is not part of a batch.
+     */
     private final JobBatchId batchId;
 
     private final List<JobAttempt> attempts = new ArrayList<>();
@@ -94,6 +104,36 @@ public class JobRun {
 
         // snapshot.attempts() is already defensively copied in JobRunSnapshot
         this.attempts.addAll(snapshot.attempts());
+
+        // Validate persisted-state consistency at this boundary
+        validateReconstitutedState();
+    }
+
+    private void validateReconstitutedState() {
+        if (attemptCount != attempts.size()) {
+            throw new JobExecutionException("Reconstituted state invalid: attemptCount does not match attempts list size.");
+        }
+
+        if (status == RunStatus.PENDING) {
+            if (startedAt != null || finishedAt != null || executingNodeId != null || lastHeartbeat != null) {
+                throw new JobExecutionException("Reconstituted state invalid: PENDING run has execution fields.");
+            }
+        } else if (status == RunStatus.RUNNING) {
+            if (startedAt == null || executingNodeId == null || lastHeartbeat == null || finishedAt != null) {
+                throw new JobExecutionException("Reconstituted state invalid: RUNNING run is missing required execution fields or has finishedAt.");
+            }
+        } else if (status == RunStatus.RECOVERING) {
+            if (startedAt == null || executingNodeId == null || lastHeartbeat == null) {
+                throw new JobExecutionException("Reconstituted state invalid: RECOVERING run is missing required recovery fields.");
+            }
+        } else if (status == RunStatus.SUCCESS || status == RunStatus.FAILED || status == RunStatus.TIMED_OUT) {
+            if (startedAt == null || finishedAt == null) {
+                throw new JobExecutionException("Reconstituted state invalid: Terminal run is missing startedAt or finishedAt.");
+            }
+            if (durationMs != null && durationMs < 0) {
+                throw new JobExecutionException("Reconstituted state invalid: Terminal run has negative duration.");
+            }
+        }
     }
 
     public void markStarted(NodeInstanceId nodeId, Instant occurredAt) {
@@ -229,14 +269,35 @@ public class JobRun {
         Objects.requireNonNull(recoveringNodeId, "recoveringNodeId cannot be null");
         Objects.requireNonNull(occurredAt, OCCURRED_AT_CANNOT_BE_NULL);
 
-        if (this.status != RunStatus.PENDING && this.status != RunStatus.RUNNING) {
-            throw new JobExecutionException("Cannot begin recovery on a run that is not PENDING or RUNNING. Current state: " + status);
+        // Strictly limit to RUNNING. PENDING dispatches are handled by markAbandoned.
+        if (this.status != RunStatus.RUNNING) {
+            throw new JobExecutionException("Cannot begin recovery on a run that is not RUNNING. Current state: " + status);
         }
         this.status = RunStatus.RECOVERING;
-        this.executingNodeId = recoveringNodeId; // Transfer ownership to recovering node
-        this.lastHeartbeat = occurredAt; // Reset lease timer for the recovery process
-
+        this.executingNodeId = recoveringNodeId;
+        this.lastHeartbeat = occurredAt;
         events.add(new JobRecoveryStarted(jobId, id, recoveringNodeId, occurredAt));
+    }
+
+    /**
+     * Explicit transition for abandoned dispatches (stale PENDING runs).
+     * Bypasses RECOVERING state and goes straight to FAILED.
+     * Sets startedAt to prevent validation errors on reconstitution.
+     */
+    public void markAbandoned(Instant occurredAt, RecoveryReason reason) {
+        Objects.requireNonNull(occurredAt, "occurredAt cannot be null");
+        Objects.requireNonNull(reason, "reason cannot be null");
+
+        if (this.status != RunStatus.PENDING) {
+            throw new JobExecutionException("Cannot mark a run as abandoned if it is not PENDING. Current state: " + status);
+        }
+        this.status = RunStatus.FAILED;
+        this.startedAt = occurredAt;
+        this.finishedAt = occurredAt;
+        this.errorType = "JobAbandoned";
+        this.errorMessage = reason.name();
+        this.durationMs = 0L;
+        events.add(new JobReclaimed(jobId, id, reason.name(), occurredAt));
     }
 
     /**

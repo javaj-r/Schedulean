@@ -46,7 +46,7 @@ When generating or reviewing code, ensure the following aggregates, value object
 - **Aggregates:** `JobDefinition`, `JobRun`, `JobAttempt`, `JobChain`, `JobChainStep`, `JobBatch`.
 - **Aggregate Root Factories:** `JobDefinitionFactory`, `JobRunFactory`, `JobChainFactory`, `JobBatchFactory`.
 - **Records/Models:** `JobInvocation`, `JobFailureEvent`, `RunContext`.
-- **Value Objects (`valueobject`):** `JobId` (String-backed), `JobRunId` (String-backed), `JobBatchId` (String-backed), `ChainId` (String-backed), `LockName`, `CronExpression`, `Interval`, `ScheduleConfig`, `RetrySpec`, `RetryMode`, `LockConfig`, `HeartbeatConfig`, `Priority`, `ServerTags`, `Timeout`, `ConcurrencyLimit`, `ExternalRef`, `TraceContext`, `JobHandlerKey`, `NodeInstanceId`, `JobRunSnapshot`, `JobBatchSnapshot`, `JobChainSnapshot`, `JobDefinitionSnapshot`.
+- **Value Objects (`valueobject`):** `JobId` (String-backed), `JobRunId` (String-backed), `JobBatchId` (String-backed), `ChainId` (String-backed), `LockName`, `CronExpression`, `Interval`, `ScheduleConfig`, `RetrySpec`, `RetryMode`, `LockConfig`, `HeartbeatConfig`, `Priority`, `ServerTags`, `Timeout`, `ConcurrencyLimit`, `ExternalRef`, `TraceContext`, `JobHandlerKey`, `NodeInstanceId`, `JobRunSnapshot`, `JobBatchSnapshot`, `JobChainSnapshot`, `JobDefinitionSnapshot`, `ShutdownPolicy`.
 - **Enums (`valueobject.enums`):** `JobState`, `RunStatus`, `AttemptStatus`, `ChainStatus`, `BatchStatus`, `ChainStepTriggerMode`, `StepOutcome`, `NotificationChannel`, `RecoveryReason`.
 - **Events:** `DomainEvent` (interface), `JobDomainEvent` (interface), `JobScheduled`, `JobDefinitionChanged`, `JobRunStarted`, `JobNextRunCleared`, `JobAttemptSucceeded`, `JobAttemptFailed`, `JobRunSucceeded`, `JobRunFailed`, `JobTimedOut`, `JobReclaimed`, `JobRecoveryStarted`, `JobResultStorageEnabled`, `JobAssignedToChain`, `LockReleased`, `ChainAdvanced`, `BatchUpdated`, `BatchCompleted`, `BatchFailed`, `JobPaused`, `JobResumed`, `ChainCompleted`, `ChainFailed`.
 - **Services:** `RetryPolicy`, `NotificationRuleEngine`.
@@ -55,8 +55,8 @@ When generating or reviewing code, ensure the following aggregates, value object
 
 ### Application Layer (`org.javid.schedulean.application`)
 - **Inbound Ports:** `ScheduleJobUseCase`, `TriggerJobUseCase`, `PauseJobUseCase`, `ResumeJobUseCase`, `UpdateJobDefinitionUseCase`, `ReleaseLockUseCase`, `QueryJobHistoryUseCase`.
-- **Outbound Ports:** `JobDefinitionRepository`, `JobRunRepository`, `JobAttemptRepository`, `LockRepository`, `JobDispatchPort`, `NodeNotificationPort`, `NodeRegistryPort`, `OrphanedJobRecoveryPort`, `ResilientDatabasePort`, `ObservabilityPort`, `SchemaMigrationPort`, `JobFailureNotificationPort`, `JobHandlerRegistry`, `DomainEventPublisher`, `ClusterModePort`, `TaskSchedulerPort`, `CronNextRunProvider`, `JobRunUpdatePort`, `IdGenerationPort`.
-- **Services:** `ExecuteJobService` (Retry + Heartbeat + Audit), `JobHeartbeatService`, `ClusterRecoveryService` (Zombie/Orphan cleanup), `TriggerJobService`, etc.
+- **Outbound Ports:** `JobDefinitionRepository`, `JobRunRepository`, `JobAttemptRepository`, `LockRepository`, `JobDispatchPort`, `NodeNotificationPort`, `NodeRegistryPort`, `OrphanedJobRecoveryPort`, `ResilientDatabasePort`, `ObservabilityPort`, `SchemaMigrationPort`, `JobFailureNotificationPort`, `JobHandlerRegistry`, `DomainEventPublisher`, `ClusterModePort`, `TaskSchedulerPort`, `CronNextRunProvider`, `JobRunUpdatePort`, `IdGenerationPort`, `IntakeControlPort`, `ShutdownGatePort`, `ActiveRunRegistry`.
+- **Services:** `ExecuteJobService` (Retry + Heartbeat + Audit), `JobHeartbeatService`, `ClusterRecoveryService` (Zombie/Orphan cleanup), `TriggerJobService`, `GracefulShutdownService`, etc.
 - **Queries/Commands:** `JobRunView`, `JobAttemptView`, `LockView`, command records.
 
 ### Adapter Layer (`org.javid.schedulean.adapter`)
@@ -78,6 +78,7 @@ When generating or reviewing code, ensure the following aggregates, value object
 - **Heartbeats:** `ExecuteJobService` spawns a virtual thread to update `job_run.last_heartbeat`. Master node scans for stale heartbeats to detect zombies.
 - **Resilience:** DB operations wrapped in `ResilientDatabasePort`. If Circuit Breaker is OPEN, audit writes go to a local file outbox and are replayed later.
 - **Oracle 26ai:** Use `JSON` type for arrays/objects (retry exceptions, server tags, results). Use `BOOLEAN` type. No Foreign Keys on hot write paths (`job_run`, `job_attempt`)—enforce relationships in the application layer.
+- **Graceful Shutdown:** `GracefulShutdownService` implements `ShutdownGatePort`. It stops intake via `IntakeControlPort`, drains active runs tracked in `ActiveRunRegistry`, cancels orchestrators and handler futures, waits for a grace period, marks remaining runs as orphaned, and deregisters.
 
 ## 5. Domain-Driven Design (DDD) & Aggregate Rules (STRICT)
 
@@ -146,6 +147,7 @@ When writing or reviewing any Java code, the following clean code and SOLID rule
 23. **ID Strategy Check:** Did I ensure all aggregates receive their IDs via the constructor (using a `String`-backed Value Object) and that ID generation is requested via an `IdGenerationPort` rather than hardcoding UUID/UUIDv7 generation in the application core?
 24. **Lombok Boundary Check:** Did I ensure NO Lombok annotations are used in the `domain` or `application-api` modules?
 25. **Aggregate Factory & Snapshot Check:** Did I ensure all Aggregate Roots use a dedicated Factory and a Snapshot Value Object for reconstitution, rather than public constructors or static methods?
+26. **Value Object Placement Check:** Did I ensure configuration Value Objects like `ShutdownPolicy` are placed in `domain.valueobject` and NOT in `application-api`?
 
 If any of the above are false, revise the code before presenting it.
 ```

@@ -6,6 +6,9 @@ import org.javid.schedulean.domain.valueobject.LockName;
 import java.time.Duration;
 import java.util.List;
 
+/**
+ * Port for distributed lock management.
+ */
 public interface LockRepository {
 
     /**
@@ -17,8 +20,8 @@ public interface LockRepository {
      * Forcefully releases a lock in the infrastructure (e.g., updates the DB row to set lock_until = now()).
      * <p>
      * NOTE: This method performs infrastructure action ONLY. It does NOT generate domain events.
-     * The calling application service MUST invoke the aggregate's releaseLock() method to record
-     * the LockReleased domain event consistently.
+     * The calling application service MUST publish the LockReleased domain event directly
+     * after calling this method.
      * </p>
      */
     void forceRelease(LockName lockName);
