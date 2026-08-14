@@ -10,10 +10,14 @@ import java.time.Instant;
  */
 public final class JobRunFactory {
 
+    private JobRunFactory() {
+        /* This utility class should not be instantiated */
+    }
+
     /**
      * Creates a NEW JobRun in its initial PENDING state.
      */
-    public JobRun createNewRun(
+    public static JobRun createNewRun(
             JobRunId id,
             JobId jobId,
             NodeInstanceId createdByNodeId,
@@ -29,7 +33,7 @@ public final class JobRunFactory {
      * Reconstitutes a JobRun from a persisted snapshot.
      * Delegates to the package-private static method inside JobRun to ensure encapsulation.
      */
-    public JobRun reconstitute(JobRunSnapshot snapshot) {
+    public static JobRun reconstitute(JobRunSnapshot snapshot) {
         return new JobRun(snapshot);
     }
 }

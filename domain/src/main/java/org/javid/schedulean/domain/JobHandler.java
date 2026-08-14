@@ -5,15 +5,16 @@ import org.javid.schedulean.domain.model.RunContext;
 /**
  * Port (Interface) to be implemented by other bounded contexts or infrastructure adapters
  * to define the actual business logic of a job.
- * <br>
+ * <p>
  * CONTRACT: Implementations MUST be cooperative with interruption.
- * When a job exceeds its timeout, the virtual thread executing this method will be interrupted.
- * Implementations MUST:
+ * When a job exceeds its timeout or loses ownership (recovery), the virtual thread executing
+ * this method will be interrupted. Implementations MUST:
  * - Use interruptible I/O operations (e.g., InputStream, Channel, HttpClient)
  * - Check Thread.currentThread().isInterrupted() periodically in long-running loops
  * - Propagate InterruptedException by rethrowing it or restoring the interrupt flag
  * Failure to handle interruption may result in the handler continuing to execute
- * after the JobRun has been marked TIMED_OUT.
+ * after the JobRun has been marked TIMED_OUT or RECOVERING.
+ * </p>
  */
 public interface JobHandler {
     /**

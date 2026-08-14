@@ -11,10 +11,14 @@ import java.time.Instant;
  */
 public final class JobBatchFactory {
 
+    private JobBatchFactory() {
+        /* This utility class should not be instantiated */
+    }
+
     /**
      * Creates a NEW JobBatch in its initial PENDING state.
      */
-    public JobBatch createNewBatch(JobBatchId id, String name, int totalJobs, Instant occurredAt) {
+    public static JobBatch createNewBatch(JobBatchId id, String name, int totalJobs, Instant occurredAt) {
         return new JobBatch(id, name, totalJobs, occurredAt);
     }
 
@@ -22,7 +26,7 @@ public final class JobBatchFactory {
      * Reconstitutes a JobBatch from a persisted snapshot.
      * Delegates to the package-private static method inside JobBatch to ensure encapsulation.
      */
-    public JobBatch reconstitute(JobBatchSnapshot snapshot) {
+    public static JobBatch reconstitute(JobBatchSnapshot snapshot) {
         return new JobBatch(snapshot);
     }
 }

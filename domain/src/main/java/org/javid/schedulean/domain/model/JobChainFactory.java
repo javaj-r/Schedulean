@@ -12,10 +12,14 @@ import java.util.List;
  */
 public final class JobChainFactory {
 
+    private JobChainFactory() {
+        /* This utility class should not be instantiated */
+    }
+
     /**
      * Creates a NEW JobChain in its initial PENDING state.
      */
-    public JobChain createNewChain(ChainId id, String name, List<JobChainStep> steps, Instant occurredAt) {
+    public static JobChain createNewChain(ChainId id, String name, List<JobChainStep> steps, Instant occurredAt) {
         return new JobChain(id, name, steps, occurredAt);
     }
 
@@ -23,7 +27,7 @@ public final class JobChainFactory {
      * Reconstitutes a JobChain from a persisted snapshot.
      * Delegates to the package-private static method inside JobChain to ensure encapsulation.
      */
-    public JobChain reconstitute(JobChainSnapshot snapshot) {
+    public static JobChain reconstitute(JobChainSnapshot snapshot) {
         return new JobChain(snapshot);
     }
 }
