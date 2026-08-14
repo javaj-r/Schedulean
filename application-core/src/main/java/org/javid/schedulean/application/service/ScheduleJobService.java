@@ -1,6 +1,7 @@
 package org.javid.schedulean.application.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.javid.schedulean.application.command.ScheduleJobCommand;
 import org.javid.schedulean.application.port.in.ScheduleJobUseCase;
 import org.javid.schedulean.application.port.out.CronNextRunProvider;
@@ -11,6 +12,7 @@ import org.javid.schedulean.domain.model.JobDefinitionFactory;
 
 import java.time.Instant;
 
+@Slf4j
 @RequiredArgsConstructor
 public class ScheduleJobService implements ScheduleJobUseCase {
 
@@ -26,12 +28,11 @@ public class ScheduleJobService implements ScheduleJobUseCase {
                 command.executionConfig(), command.occurredAt()
         );
 
-        // Calculate and assign next run atomically with save
         Instant nextRun = calculateNextRun(jobDefinition, command.occurredAt());
         jobDefinition.scheduleNextRun(nextRun, command.occurredAt());
 
-        repo.save(jobDefinition);
-        jobDefinition.pullEvents().forEach(events::publish);
+        // Pass events to repository for transactional outbox persistence
+        repo.save(jobDefinition, jobDefinition.pullEvents());
     }
 
     private Instant calculateNextRun(JobDefinition def, Instant occurredAt) {

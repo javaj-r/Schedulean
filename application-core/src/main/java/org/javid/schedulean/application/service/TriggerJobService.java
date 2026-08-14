@@ -14,7 +14,6 @@ import org.javid.schedulean.domain.valueobject.SpanId;
 import org.javid.schedulean.domain.valueobject.TraceContext;
 import org.javid.schedulean.domain.valueobject.TraceId;
 
-import java.time.Instant;
 import java.util.Map;
 
 @Slf4j
@@ -35,19 +34,24 @@ public class TriggerJobService implements TriggerJobUseCase {
         // Generate ID via the port
         JobRunId runId = new JobRunId(idGenerator.generate());
 
+        // Use command.occurredAt() instead of Instant.now()
         JobRun run = JobRunFactory.createNewRun(
-                runId, command.jobId(), registry.nodeId(), Instant.now(),
+                runId, command.jobId(), registry.nodeId(), command.occurredAt(),
                 TraceContext.empty(), definition.chainId(), command.batchId()
         );
 
-        // Use explicit create method
-        runRepository.create(run, run.pullEvents());
+        // Check result of creation. Do not dispatch if creation fails.
+        boolean created = runRepository.create(run, run.pullEvents());
+        if (!created) {
+            log.error("Failed to create run {}. Aborting dispatch.", runId.value());
+            throw new IllegalStateException("Failed to create job run: " + runId.value());
+        }
 
         JobInvocation invocation = new JobInvocation(
                 command.jobId(), definition.jobHandlerKey(), null, Map.of(),
                 run.id(), registry.nodeId(),
                 new TraceId("empty"), new SpanId("empty"),
-                Instant.now()
+                command.occurredAt()
         );
         dispatchPort.dispatch(invocation);
 

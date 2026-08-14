@@ -2,7 +2,6 @@ package org.javid.schedulean.application.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.javid.schedulean.application.port.out.ActiveExecutionRegistry;
 import org.javid.schedulean.application.port.out.JobRunUpdatePort;
 import org.javid.schedulean.application.port.out.NodeRegistryPort;
 import org.javid.schedulean.application.port.out.ObservabilityPort;
@@ -22,9 +21,10 @@ public class JobHeartbeatService {
     private final ObservabilityPort observabilityPort;
 
     /**
-     * Accepts the execution thread to enable immediate interruption on ownership loss.
+     * Starts a virtual thread that periodically updates the heartbeat.
+     * If the heartbeat is rejected (ownership lost), it interrupts the orchestrator thread.
      */
-    public HeartbeatHandle start(JobRunId runId, Duration interval, Thread orchestratorThread, ActiveExecutionRegistry executionRegistry) {
+    public HeartbeatHandle start(JobRunId runId, Duration interval, Thread orchestratorThread) {
         AtomicBoolean running = new AtomicBoolean(true);
         NodeInstanceId nodeId = nodeRegistryPort.nodeId();
 
@@ -32,13 +32,11 @@ public class JobHeartbeatService {
             while (running.get() && !Thread.currentThread().isInterrupted()) {
                 try {
                     Thread.sleep(interval.toMillis());
-
-                    // Check if heartbeat was accepted (run is still RUNNING)
                     boolean accepted = jobRunUpdatePort.updateHeartbeat(runId, nodeId, Instant.now());
                     if (!accepted) {
                         log.warn("Heartbeat rejected for run {} - run is no longer RUNNING. Interrupting execution.", runId.value());
-                        executionRegistry.cancel(runId); // Interrupts the handler virtual thread
-                        orchestratorThread.interrupt();  // Unblocks future.get() or sleep() in the orchestrator
+                        // Interrupt the orchestrator to unblock future.get() or sleep()
+                        orchestratorThread.interrupt();
                         running.set(false);
                         break;
                     }
@@ -46,11 +44,8 @@ public class JobHeartbeatService {
                     Thread.currentThread().interrupt();
                     break;
                 } catch (Exception e) {
-                    // No silent failures. Log and emit metric.
                     log.error("Failed to update heartbeat for run: {}", runId.value(), e);
                     observabilityPort.incrementCounter("job.heartbeat.failure", "runId", runId.value());
-
-                    // Add retry delay to prevent 100% CPU spin
                     try {
                         Thread.sleep(interval.toMillis());
                     } catch (InterruptedException _) {

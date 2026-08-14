@@ -33,12 +33,18 @@ public class ExecuteJobService {
     private final JobHeartbeatService heartbeatService;
     private final ExecutorService virtualThreadExecutor;
     private final JobAttemptRepository attemptRepository;
-    private final ActiveExecutionRegistry activeExecutionRegistry;
+    private final ActiveRunRegistry activeRunRegistry;
+    private final ShutdownGatePort shutdownGatePort;
 
     private final RetryPolicy retryPolicy = new RetryPolicy();
     private final Map<String, Semaphore> perJobLimit = new ConcurrentHashMap<>();
 
     public void execute(JobDefinition definition, JobRun run) {
+        // Check shutdown gate before starting
+        if (shutdownGatePort.isShuttingDown()) {
+            log.info("Shutdown in progress. Rejecting run {}", run.id().value());
+            return;
+        }
         executeLocked(definition, run);
     }
 
@@ -47,41 +53,40 @@ public class ExecuteJobService {
         Timeout runTimeout = definition.executionConfig().timeout();
         Throwable lastError = null;
         boolean success = false;
-        boolean ownershipLost = false;
+        boolean abortExecution = false;
 
         NodeInstanceId nodeId = nodeRegistry.nodeId();
 
-        // Must transition to RUNNING before starting attempts
         run.markStarted(nodeId, Instant.now());
 
-        // Use explicit startIfPending method
         if (!runRepository.startIfPending(run, nodeId, run.pullEvents())) {
             log.warn("Failed to start run {}. Ownership lost or already running.", run.id().value());
             return;
         }
 
-        // Heartbeat spans the entire run lifecycle (across all attempts and backoffs)
         Thread executionThread = Thread.currentThread();
+
+        // Register the orchestrator thread and get a handle to update the handler future
+        ActiveRunRegistry.RunExecutionHandle executionHandle = activeRunRegistry.register(run.id(), executionThread);
+
         JobHeartbeatService.HeartbeatHandle heartbeatHandle = heartbeatService.start(
-                run.id(), Duration.ofSeconds(10), executionThread, activeExecutionRegistry
+                run.id(), Duration.ofSeconds(10), executionThread
         );
 
         try {
             for (int attemptNumber = 1; attemptNumber <= retrySpec.maxAttempts(); attemptNumber++) {
-                AttemptResult result = runAttempt(definition, run, attemptNumber, runTimeout, nodeId);
+                AttemptResult result = runAttempt(definition, run, attemptNumber, runTimeout, nodeId, executionHandle);
                 if (result.success()) {
                     success = true;
                     break;
                 }
-                // If ownership is lost (interrupted/cancelled), abort immediately. Do not save.
-                if (result.ownershipLost()) {
-                    ownershipLost = true;
+                if (result.abortExecution()) {
+                    abortExecution = true;
                     break;
                 }
 
                 lastError = result.error();
 
-                // If the run itself timed out, stop retrying immediately
                 if (lastError instanceof JobTimeoutException && run.status() == RunStatus.TIMED_OUT) {
                     break;
                 }
@@ -91,25 +96,27 @@ public class ExecuteJobService {
                     try {
                         Thread.sleep(backoff.toMillis());
                     } catch (InterruptedException e) {
-                        // Interrupted during backoff (likely heartbeat rejection/ownership loss)
+                        // Cancellation is reported distinctly. Interrupted backoff means abort.
                         Thread.currentThread().interrupt();
-                        ownershipLost = true;
+                        abortExecution = true;
                         break;
                     }
                 }
             }
 
-            if (!ownershipLost) {
+            if (!abortExecution) {
                 finalizeRun(definition, run, success, lastError, nodeId);
             } else {
-                log.warn("Run {} lost ownership during execution. Aborting without saving aggregate state.", run.id().value());
+                log.warn("Run {} aborted due to interruption or ownership loss. Aborting without saving aggregate state.", run.id().value());
             }
         } finally {
             heartbeatHandle.stop();
+            // Unregister only after the entire run lifecycle (including retries/backoff) is complete
+            activeRunRegistry.unregister(run.id());
         }
     }
 
-    private AttemptResult runAttempt(JobDefinition definition, JobRun run, int attemptNumber, Timeout runTimeout, NodeInstanceId nodeId) {
+    private AttemptResult runAttempt(JobDefinition definition, JobRun run, int attemptNumber, Timeout runTimeout, NodeInstanceId nodeId, ActiveRunRegistry.RunExecutionHandle executionHandle) {
         JobAttempt domainAttempt = run.startAttempt(Instant.now());
         attemptRepository.saveIfRunOwnedAndRunning(run.id(), nodeId, domainAttempt);
 
@@ -134,12 +141,13 @@ public class ExecuteJobService {
                 attemptRepository.saveIfRunOwnedAndRunning(run.id(), nodeId, domainAttempt);
                 return new AttemptResult(false, timeoutException, false);
             }
-            // Only set to true AFTER successful acquire
             permitAcquired = true;
 
             JobHandler handler = handlerRegistry.get(definition.jobHandlerKey());
             Future<Object> future = virtualThreadExecutor.submit(() -> handler.execute(RunContext.of(run, attemptNumber, TraceContext.empty())));
-            activeExecutionRegistry.register(run.id(), future);
+
+            // Update the registry handle so the future can be cancelled during shutdown
+            executionHandle.setHandlerFuture(future);
 
             try {
                 if (!runTimeout.isZero()) {
@@ -162,7 +170,6 @@ public class ExecuteJobService {
                 run.markAttemptTimedOut(domainAttempt, Instant.now());
                 attemptRepository.saveIfRunOwnedAndRunning(run.id(), nodeId, domainAttempt);
                 run.timeout(Instant.now());
-                // Fenced save for run timeout
                 if (!runRepository.saveIfOwnedAndRunning(run, nodeId, run.pullEvents())) {
                     result = new AttemptResult(false, new JobExecutionException("Ownership lost during timeout save"), true);
                 } else {
@@ -181,11 +188,11 @@ public class ExecuteJobService {
                 Thread.currentThread().interrupt();
                 result = new AttemptResult(false, new JobExecutionException("Execution cancelled/interrupted", e), true);
             } finally {
-                activeExecutionRegistry.unregister(run.id());
+                // Clear the future from the handle when the attempt is done
+                executionHandle.setHandlerFuture(null);
             }
 
         } catch (Throwable throwable) {
-            // Check for interruption before saving to prevent overwriting recovery
             if (Thread.currentThread().isInterrupted()) {
                 result = new AttemptResult(false, new JobExecutionException("Interrupted", throwable), true);
             } else {
@@ -196,7 +203,6 @@ public class ExecuteJobService {
                 result = new AttemptResult(false, throwable, false);
             }
         } finally {
-            // Only release if we actually acquired
             if (permitAcquired) {
                 limiter.release();
             }
@@ -213,7 +219,6 @@ public class ExecuteJobService {
     }
 
     private void finalizeRun(JobDefinition definition, JobRun run, boolean success, Throwable lastError, NodeInstanceId nodeId) {
-        // If run was already marked TIMED_OUT in an attempt, don't overwrite it
         if (run.status() != RunStatus.TIMED_OUT) {
             if (success) {
                 run.succeed(null, Instant.now());
@@ -222,7 +227,6 @@ public class ExecuteJobService {
             }
         }
 
-        // Fenced save with atomic outbox event persistence
         boolean saved = runRepository.saveIfOwnedAndRunning(run, nodeId, run.pullEvents());
         if (!saved) {
             log.warn("Failed to finalize run {}. Ownership lost or already reclaimed.", run.id().value());
@@ -230,6 +234,7 @@ public class ExecuteJobService {
         observabilityPort.incrementCounter(success ? "job.success" : "job.failed", "job", definition.id().value());
     }
 
-    private record AttemptResult(boolean success, Throwable error, boolean ownershipLost) {
+    // Renamed ownershipLost to abortExecution for clarity
+    private record AttemptResult(boolean success, Throwable error, boolean abortExecution) {
     }
 }

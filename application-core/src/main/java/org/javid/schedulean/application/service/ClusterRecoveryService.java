@@ -6,6 +6,7 @@ import org.javid.schedulean.application.port.out.*;
 import org.javid.schedulean.domain.model.JobRun;
 import org.javid.schedulean.domain.valueobject.JobRunId;
 import org.javid.schedulean.domain.valueobject.NodeInstanceId;
+import org.javid.schedulean.domain.valueobject.enums.RunStatus;
 
 import java.time.Instant;
 import java.util.List;
@@ -27,7 +28,6 @@ public class ClusterRecoveryService {
         }
 
         Instant staleBefore = Instant.now().minus(recoveryPolicy.staleAfter());
-        // Receive typed candidates. Includes both RUNNING/PENDING (stale) and RECOVERING (stranded) candidates.
         List<OrphanedJobRecoveryPort.RecoveryCandidate> candidates = recoveryPort.findRecoveryCandidates(staleBefore);
 
         for (OrphanedJobRecoveryPort.RecoveryCandidate candidate : candidates) {
@@ -55,21 +55,30 @@ public class ClusterRecoveryService {
             return;
         }
 
-        // Aggregate generates JobRecoveryStarted event
-        run.beginRecovery(recoveringNodeId, Instant.now());
-
-        // Atomically transition DB to RECOVERING and persist outbox event.
-        // This prevents stale workers from overwriting state.
-        boolean claimed = runRepository.transitionToRecovering(run, recoveringNodeId, staleBefore, run.pullEvents());
-        if (!claimed) {
-            log.debug("Run {} was already claimed or updated by another node.", runId.value());
+        // Split abandoned dispatch from execution recovery
+        if (run.status() == RunStatus.PENDING) {
+            run.markAbandoned(Instant.now(), candidate.reason());
+            boolean saved = runRepository.failIfPending(run, staleBefore, run.pullEvents());
+            if (saved) {
+                log.info("Successfully marked abandoned run {} as FAILED.", runId.value());
+            } else {
+                log.debug("Abandoned run {} was already claimed or updated by another node.", runId.value());
+            }
             return;
         }
 
-        // Aggregate generates JobReclaimed event
-        run.reclaim(candidate.reason(), Instant.now());
+        // If the run is already RECOVERING (stranded recovery process), skip beginRecovery
+        // and transitionToRecovering, and directly attempt to reclaim it to FAILED.
+        if (run.status() != RunStatus.RECOVERING) {
+            run.beginRecovery(recoveringNodeId, Instant.now());
+            boolean claimed = runRepository.transitionToRecovering(run, recoveringNodeId, staleBefore, run.pullEvents());
+            if (!claimed) {
+                log.debug("Run {} was already claimed or updated by another node.", runId.value());
+                return;
+            }
+        }
 
-        // Atomically transition DB to FAILED and persist outbox event.
+        run.reclaim(candidate.reason(), Instant.now());
         boolean saved = runRepository.saveIfRecoveringAndOwned(run, recoveringNodeId, run.pullEvents());
         if (saved) {
             log.info("Successfully reclaimed run {}.", runId.value());

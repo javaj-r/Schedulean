@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import org.javid.schedulean.application.command.UpdateJobDefinitionCommand;
 import org.javid.schedulean.application.port.in.UpdateJobDefinitionUseCase;
 import org.javid.schedulean.application.port.out.CronNextRunProvider;
-import org.javid.schedulean.application.port.out.DomainEventPublisher;
 import org.javid.schedulean.application.port.out.JobDefinitionRepository;
 import org.javid.schedulean.domain.model.JobDefinition;
 
@@ -14,7 +13,6 @@ import java.time.Instant;
 public class UpdateJobDefinitionService implements UpdateJobDefinitionUseCase {
 
     private final CronNextRunProvider cronNextRunProvider;
-    private final DomainEventPublisher domainEventPublisher;
     private final JobDefinitionRepository jobDefinitionRepository;
 
     @Override
@@ -26,8 +24,8 @@ public class UpdateJobDefinitionService implements UpdateJobDefinitionUseCase {
         Instant nextRun = calculateNextRun(def, cmd.occurredAt());
         def.scheduleNextRun(nextRun, cmd.occurredAt());
 
-        jobDefinitionRepository.save(def);
-        def.pullEvents().forEach(domainEventPublisher::publish);
+        // Pass events to repository for transactional outbox persistence
+        jobDefinitionRepository.save(def, def.pullEvents());
     }
 
     private Instant calculateNextRun(JobDefinition def, Instant occurredAt) {
