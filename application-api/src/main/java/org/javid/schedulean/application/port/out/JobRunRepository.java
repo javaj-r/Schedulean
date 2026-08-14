@@ -15,6 +15,10 @@ public interface JobRunRepository {
 
     /**
      * Atomically creates a new run (PENDING) and its events.
+     * <p>
+     * CONTRACT: Returns true if created successfully.
+     * Returns false ONLY if a run with this ID already exists (duplicate/conflict).
+     * Throws an exception on infrastructure failure to prevent event loss.
      */
     boolean create(JobRun run, List<DomainEvent> events);
 
@@ -31,14 +35,19 @@ public interface JobRunRepository {
     boolean saveIfOwnedAndRunning(JobRun run, NodeInstanceId expectedNodeId, List<DomainEvent> events);
 
     /**
-     * FIX: Atomically transitions a run from RUNNING/PENDING to RECOVERING.
-     * Adapter MUST fence: WHERE id = ? AND status IN ('RUNNING', 'PENDING') AND last_heartbeat < ?
-     * This prevents stale workers from overwriting recovery claims.
+     * Atomically transitions a run from RUNNING to RECOVERING.
+     * Adapter MUST fence: WHERE id = ? AND status = 'RUNNING' AND last_heartbeat < ?
      */
     boolean transitionToRecovering(JobRun run, NodeInstanceId recoveringNodeId, Instant staleBefore, List<DomainEvent> events);
 
     /**
-     * FIX: Atomically transitions a run from RECOVERING to FAILED (or terminal).
+     * Atomically transitions an abandoned PENDING run to FAILED.
+     * Adapter MUST fence: WHERE id = ? AND status = 'PENDING' AND scheduled_at < ?
+     */
+    boolean failIfPending(JobRun run, Instant staleBefore, List<DomainEvent> events);
+
+    /**
+     * Atomically transitions a run from RECOVERING to FAILED (or terminal).
      * Adapter MUST fence: WHERE status = 'RECOVERING' AND executing_node_id = ?
      */
     boolean saveIfRecoveringAndOwned(JobRun run, NodeInstanceId expectedNodeId, List<DomainEvent> events);
