@@ -10,17 +10,28 @@
     </parent>
 
     <artifactId>schedulean-application-core</artifactId>
+    <name>Schedulean Application Core</name>
     <packaging>jar</packaging>
 
     <dependencies>
+        <dependency>
+            <groupId>org.javid</groupId>
+            <artifactId>schedulean-application-api</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.javid</groupId>
             <artifactId>schedulean-domain</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>org.javid</groupId>
-            <artifactId>schedulean-application-api</artifactId>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
         </dependency>
     </dependencies>
 
